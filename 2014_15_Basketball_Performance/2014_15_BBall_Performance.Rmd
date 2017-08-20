@@ -1,0 +1,208 @@
+---
+title: "NBA Player Performance 2014-2015"
+output: html_notebook
+---
+
+#Using Datasets Available Here: https://www.kaggle.com/dansbecker/nba-shot-logs (shot_log.csv)
+#And Here: https://www.basketball-reference.com/leagues/NBA_2015_totals.html (BBREF_players.csv)
+
+This project attempts to identify patterns and create a framework for evaluating the performance value of basketball players by focusing on their scoring efficiency (ability to generate the most points in the least time).
+
+Load in all required packages
+```{r message = FALSE, warning = FALSE}
+suppressPackageStartupMessages(
+  {
+    package_list <- c('plotly', 'stringr', 'dplyr', 'sqldf', 'magrittr','RColorBrewer')
+    non_installed <- package_list[!(package_list %in% installed.packages()[,"Package"])]
+    if(length(non_installed)) install.packages(non_installed)
+    library('plotly')
+    library('RColorBrewer')
+    library('dplyr')
+    library('stringr')
+    library('sqldf')
+    library('magrittr')
+  }
+)
+```
+
+
+This dataset contains data on every shot taken in NBA games during 2014-2015
+The query captures all the players represented in the dataset and their artificial key
+```{r message = FALSE, warning = FALSE}
+
+shots_DF <- dplyr::tbl_df(read.csv("shot_logs.csv"))
+
+#Perform Cleaning
+  #Penalize missed shots?
+  #shots_DF$PTS_TYPE <- ifelse(shots_DF$SHOT_RESULT == "made", shots_DF$PTS_TYPE, -shots_DF$PTS_TYPE)
+
+
+  #Nuetralize missed shots
+shots_DF$PTS_TYPE <- ifelse(shots_DF$SHOT_RESULT == "made", shots_DF$PTS_TYPE, 0)
+
+players <- sqldf("SELECT DISTINCT(player_id) AS \"ID\", player_name AS \"PLAYER\"
+                          FROM shots_DF
+                          ORDER BY ID")
+players
+
+```
+
+
+
+Next lets look at how the player stats compare over the whole season and create an artificial ranking system for individual player performance
+```{r message = FALSE, warning = FALSE}
+players_stats_data <- sqldf("SELECT players.ID, players.PLAYER AS \"Player\", 
+                   SUM(DRIBBLES) AS \"Dribbles\", COUNT(SHOT_NUMBER) AS \"Total_Shots\",
+                   SUM(PTS_TYPE) AS \"Point_Total\",
+                   SUM(PTS_TYPE)/COUNT(SHOT_NUMBER) AS \"Points_Per_Shot\",
+                   SUM(TOUCH_TIME) AS \"Ball_Time\"
+                   FROM players INNER JOIN shots_DF
+                   ON players.ID = shots_DF.player_id
+                   GROUP BY players.ID
+                   ORDER BY Points_Per_Shot DESC")
+
+
+#Ranking Function For Identifying Top Player Performance
+player_stats_rankfun <- function(x)
+{
+  vals <- c()
+  for(i in 1:dim(x)[1])
+  {
+    pos <- x[i,]
+    val <- pos$Points_Per_Shot/pos$Ball_Time
+    vals <- c(vals, val)
+  }
+  return(rank(vals))
+}
+players_stats_data$Rank <- player_stats_rankfun(players_stats_data)
+
+
+players_stats_plot <- plot_ly(players_stats_data) %>% 
+                 add_markers(x = ~Total_Shots, y = ~Points_Per_Shot, color = ~Rank, 
+                             size = ~Ball_Time, colors = "Spectral",
+                             text = ~paste("Player: ", Player,
+                                           "</br>Rank: ", Rank,
+                                           "</br>Points per Shot: ", round(Points_Per_Shot, digits = 3),
+                                           "</br>Ball Time: ", round(Ball_Time, digits = 3),
+                                           "</br>Dribbles: ", Dribbles,
+                                           "</br>Total Points: ", Point_Total,
+                                           "</br>Total Shots: ", Total_Shots)) %>%
+                 layout(title = paste0("Player Rankings"), 
+                        xaxis = list(title = "Total Shots"), 
+                        yaxis = list(title = "Points Per Shot"))
+
+embed_notebook(players_stats_plot, width = "1000px", height = "1000px")
+```
+
+
+
+Adding an in Depth Player Performance Dataset From Basketball Trends and Joining it with the Previous Data Allows for Analysis on More Player and Position Specific Information, such as Position, Age, and Shooting Tendencies
+```{r message = FALSE, warning = FALSE}
+BREF_data <- dplyr::tbl_df(read.csv("BBREF_players.csv"))
+players_rank <- BREF_data
+
+#Perform Cleaning
+players_rank$Player <- str_extract(players_rank$Player, "\\w+ \\w+\\b")
+players_rank <- players_rank[!is.na(players_rank$Player),]
+players_rank <- distinct(players_rank, Player, .keep_all = TRUE)
+
+player_stats_ranking_data <- sqldf("Select players_stats_data.Rank, players_rank.Player, Pos As Position, Age, Tm AS Team, G As Games, MP AS Minutes_Total, 
+                                    Ball_Time, Dribbles, Total_Shots, Point_Total, Points_Per_Shot, 
+                                    FG AS Field_Goals, FGA AS Field_Goal_Att
+                                    FROM players_rank INNER JOIN players_stats_data
+                                    ON LOWER(players_rank.Player) = players_stats_data.Player
+                                    ORDER BY Position, Rank")
+
+
+#Perform Cleaning
+player_stats_ranking_data <- player_stats_ranking_data[player_stats_ranking_data$Position %in% c("C","PF","PG","SF", "SG"),]
+player_stats_ranking_data <- as.data.frame(lapply(player_stats_ranking_data, 
+                                                  FUN = function(X)
+                                                        {
+                                                          if(!is.numeric(X))
+                                                          {
+                                                            return(as.character(X))
+                                                          }
+                                                          else
+                                                          {
+                                                            return(round(X, digits = 3))
+                                                          }
+                                                        }
+                                                  ), stringsAsFactors = FALSE
+                                            )
+player_stats_ranking_data
+
+```
+
+
+
+This Tangent Looks at How ALL the Players Compare By Position, to Determine Which Positions may be Most Valuable According to this Limited Ranking System
+The Findings Clearly Show that the Point Gaurds are Ranked Much Higher as a Group than Any Other Positions
+```{r message = FALSE, warning = FALSE}
+avg_position_ranks <- sqldf("SELECT Position, COUNT(Position) AS Number, AVG(Rank) AS Rank, AVG(Age) As Age,
+                             AVG(Points_Per_Shot) AS Points_Per_Shot, AVG(Ball_Time) AS Ball_Time,
+                             AVG(Point_Total) AS Point_Total, AVG(Total_Shots) As Total_Shots
+                             FROM player_stats_ranking_data
+                             GROUP BY Position
+                             ORDER BY Rank, Number")
+
+#Perform Cleaning
+avg_position_ranks <- as.data.frame(lapply(avg_position_ranks, 
+                                                  FUN = function(X, n = 2)
+                                                        {
+                                                          if(!is.numeric(X))
+                                                          {
+                                                            return(as.character(X))
+                                                          }
+                                                          else
+                                                          {
+                                                            return(round(X, digits = n))
+                                                          }
+                                                        }
+                                                  ), stringsAsFactors = FALSE
+                                            )
+
+avg_position_ranks.plot <- plot_ly(avg_position_ranks) %>% 
+                           add_bars(x = ~Position, y = ~Rank, color = ~Points_Per_Shot, 
+                                      size = ~Number, colors = "RdBu",
+                                      text = ~paste("</br>Number: ", Number,
+                                                    "</br>Points Per Shot: ", Points_Per_Shot,
+                                                    "</br>Point Total: ", Point_Total,
+                                                    "</br>Shot Total: ", Total_Shots,
+                                                    "</br>Ball Time: ", Ball_Time,
+                                                    "</br>Age: ", Age) ) %>%
+                          layout(title = "Positional Rankings", 
+                                 xaxis = list(title = "Position"), 
+                                 yaxis = list(title = "Average Ranking"),
+                                 bargap = ~Number)
+
+embed_notebook(avg_position_ranks.plot, width = "1000px", height = "1000px")
+
+```
+
+
+```{r message = FALSE, warning = FALSE}
+                          
+player_position_ranks.plot <-  plot_ly() %>%
+                          add_data(player_stats_ranking_data) %>%
+                          add_markers(x = ~Rank, y = ~Point_Total, z = ~Points_Per_Shot,
+                                      size = ~Ball_Time, color = ~Position, colors = "Spectral",
+                                      text = ~paste("</br>Player: ", Player,
+                                                    "</br>Rank: ", Rank,
+                                                    "</br>Position: ", Position,
+                                                    "</br>Points Per Shot: ", Points_Per_Shot,
+                                                    "</br>Point Total: ", Point_Total,
+                                                    "</br>Shot Total: ", Total_Shots,
+                                                    "</br>Ball Time: ", Ball_Time,
+                                                    "</br>Age: ", Age) ) %>%
+                          layout(title = "Player Positional Rankings")
+                          
+embed_notebook(player_position_ranks.plot, width = "1000px", height = "1000px")
+
+```
+
+
+
+
+
+
