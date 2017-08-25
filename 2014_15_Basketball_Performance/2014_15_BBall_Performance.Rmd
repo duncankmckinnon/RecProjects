@@ -12,7 +12,7 @@ Load in all required packages
 ```{r message = FALSE, warning = FALSE}
 suppressPackageStartupMessages(
   {
-    package_list <- c('plotly', 'stringr', 'dplyr', 'sqldf', 'magrittr','RColorBrewer')
+    package_list <- c('plotly', 'stringr', 'dplyr', 'sqldf', 'magrittr','RColorBrewer','webshot')
     non_installed <- package_list[!(package_list %in% installed.packages()[,"Package"])]
     if(length(non_installed)) install.packages(non_installed)
     library('plotly')
@@ -21,13 +21,13 @@ suppressPackageStartupMessages(
     library('stringr')
     library('sqldf')
     library('magrittr')
+    library('webshot')
   }
 )
 ```
 
 
-This dataset contains data on every shot taken in NBA games during 2014-2015
-The query captures all the players represented in the dataset and their artificial key
+This dataset was posted on Kaggle.com, and contains a record of every shot by every player in every game of the 2014-15 season (as far as I can tell, there was too much data to check).  This section simply loads the data and does some basic cleaning.  The dataset included the point value of shots that were missed as well, so in cleaning the data I tested the implications of both penalizing missed shots (making them behave as the negative of their point value), and nuetralizing missed shots (making all missed point values equal to zero).  For the purposes of this project it makes more sense to treat missed shots as zero point values, because the implications of misses to player performance can already be accounted for in the ratio of points per shot.
 ```{r message = FALSE, warning = FALSE}
 
 shots_DF <- dplyr::tbl_df(read.csv("shot_logs.csv"))
@@ -49,7 +49,8 @@ players
 
 
 
-Next lets look at how the player stats compare over the whole season and create an artificial ranking system for individual player performance
+The data on in-game performance and shooting tendencies contains a lot of very specific information on player performance that could be used to get a high-resolution look at exactly how individuals performed in different situations.  Instead of looking for a fine grained means of quantifying player performance in different situations, this analysis will pull out aggregate results to create a generalized means of ranking players on their ability to generate points, given the limited amount of time they have to handle the ball.  Since Basketball games are short and high scoring, there is reason to believe that the best (offensive) players should have the highest ratio of points per shot to minutes of ball time. This study will look at the implications of using only this low resolution artificial ranking system, and maybe compare it to ranking systems that account for more features.
+As can be seen from the ggplot2 graphic, more ball time and low point per shot ratio result in a lower ranking value.  Since taking more shots requires more ball-time, the players that tend to have the most ball time and publicity arent ranked very highly with respect to this metric (Kobe Bryant, and Lebron James are pretty low).  The plotly graphic is far more useful and interactive in showing the same information, but unfortunately it doesn't live in the notebook.
 ```{r message = FALSE, warning = FALSE}
 players_stats_data <- sqldf("SELECT players.ID, players.PLAYER AS \"Player\", 
                    SUM(DRIBBLES) AS \"Dribbles\", COUNT(SHOT_NUMBER) AS \"Total_Shots\",
@@ -69,34 +70,46 @@ player_stats_rankfun <- function(x)
   for(i in 1:dim(x)[1])
   {
     pos <- x[i,]
-    val <- pos$Points_Per_Shot/pos$Ball_Time
+    val <- pos$Ball_Time / pos$Point_Total
     vals <- c(vals, val)
   }
-  return(rank(vals))
+  return(data.frame(Ranking = vals, Rank = rank(vals)))
 }
-players_stats_data$Rank <- player_stats_rankfun(players_stats_data)
+
+rankings <- player_stats_rankfun(players_stats_data)
+
+players_stats_data_ranks <- cbind(player_stats_rankfun(players_stats_data), players_stats_data)
 
 
-players_stats_plot <- plot_ly(players_stats_data) %>% 
-                 add_markers(x = ~Total_Shots, y = ~Points_Per_Shot, color = ~Rank, 
+players_stats_plot_plotly <- plot_ly(players_stats_data_ranks) %>%
+                 add_markers(x = ~Total_Shots, y = ~Points_Per_Shot, color = ~Ranking,
                              size = ~Ball_Time, colors = "Spectral",
                              text = ~paste("Player: ", Player,
-                                           "</br>Rank: ", Rank,
+                                           "</br>Rank: ", Rank, ", Value: ", round(Ranking, digits = 3),
                                            "</br>Points per Shot: ", round(Points_Per_Shot, digits = 3),
                                            "</br>Ball Time: ", round(Ball_Time, digits = 3),
                                            "</br>Dribbles: ", Dribbles,
                                            "</br>Total Points: ", Point_Total,
                                            "</br>Total Shots: ", Total_Shots)) %>%
-                 layout(title = paste0("Player Rankings"), 
-                        xaxis = list(title = "Total Shots"), 
+                 layout(title = paste0("Player Rankings"),
+                        xaxis = list(title = "Total Shots"),
                         yaxis = list(title = "Points Per Shot"))
 
-embed_notebook(players_stats_plot, width = "1000px", height = "1000px")
+
+players_stats_plot_gg <- ggplot() + 
+                      geom_point(data = players_stats_data_ranks, aes(x = Total_Shots, y = Points_Per_Shot, colour = Ranking, size = Ball_Time))
+                      
+
+#ggplot2 Graphic
+players_stats_plot_gg
+
+#Plotly Graphic
+#embed_notebook(players_stats_plot_plotly)
 ```
 
 
 
-Adding an in Depth Player Performance Dataset From Basketball Trends and Joining it with the Previous Data Allows for Analysis on More Player and Position Specific Information, such as Position, Age, and Shooting Tendencies
+In order to get a few more metrics on player performance, the first dataset was joined with data from basketball-reference.com.  This dataset contained player specific information on seasonal performance, including position, age, games played etc., many of which were completely unattainable from the dataset on in-game shooting. Using both datasets allows for a fuller picture of the individual player's performance, and offers a means to check the implications of the rankings and the consistency of the data.
 ```{r message = FALSE, warning = FALSE}
 BREF_data <- dplyr::tbl_df(read.csv("BBREF_players.csv"))
 players_rank <- BREF_data
@@ -106,11 +119,11 @@ players_rank$Player <- str_extract(players_rank$Player, "\\w+ \\w+\\b")
 players_rank <- players_rank[!is.na(players_rank$Player),]
 players_rank <- distinct(players_rank, Player, .keep_all = TRUE)
 
-player_stats_ranking_data <- sqldf("Select players_stats_data.Rank, players_rank.Player, Pos As Position, Age, Tm AS Team, G As Games, MP AS Minutes_Total, 
+player_stats_ranking_data <- sqldf("Select players_stats_data_ranks.Rank, Ranking, players_rank.Player, Pos As Position, Age, Tm AS Team, G As Games, MP AS Minutes_Total, 
                                     Ball_Time, Dribbles, Total_Shots, Point_Total, Points_Per_Shot, 
                                     FG AS Field_Goals, FGA AS Field_Goal_Att
-                                    FROM players_rank INNER JOIN players_stats_data
-                                    ON LOWER(players_rank.Player) = players_stats_data.Player
+                                    FROM players_rank INNER JOIN players_stats_data_ranks
+                                    ON LOWER(players_rank.Player) = players_stats_data_ranks.Player
                                     ORDER BY Position, Rank")
 
 
@@ -136,8 +149,7 @@ player_stats_ranking_data
 
 
 
-This Tangent Looks at How ALL the Players Compare By Position, to Determine Which Positions may be Most Valuable According to this Limited Ranking System
-The Findings Clearly Show that the Point Gaurds are Ranked Much Higher as a Group than Any Other Positions
+This tangent looks at how player performance stacks up when grouping by position.  This will show if the ranking system is dramatically biased towards the skills required for any given position.  Looking at the ggplot graphic generated by averaging all the metrics after aggregating by position, it is clear that centers are ranked much higher than other positions when looking at how often they score given the amount of time they handle the ball.  The surprise is that the centers had a much higher points-per-shot ratio but also less ball time, which contributed to the higher average score and lower ranking.
 ```{r message = FALSE, warning = FALSE}
 avg_position_ranks <- sqldf("SELECT Position, COUNT(Position) AS Number, AVG(Rank) AS Rank, AVG(Age) As Age,
                              AVG(Points_Per_Shot) AS Points_Per_Shot, AVG(Ball_Time) AS Ball_Time,
@@ -162,8 +174,8 @@ avg_position_ranks <- as.data.frame(lapply(avg_position_ranks,
                                                   ), stringsAsFactors = FALSE
                                             )
 
-avg_position_ranks.plot <- plot_ly(avg_position_ranks) %>% 
-                           add_bars(x = ~Position, y = ~Rank, color = ~Points_Per_Shot, 
+avg_position_ranks_plotly <- plot_ly(avg_position_ranks) %>%
+                           add_bars(x = ~Position, y = ~Rank, color = ~Points_Per_Shot,
                                       size = ~Number, colors = "RdBu",
                                       text = ~paste("</br>Number: ", Number,
                                                     "</br>Points Per Shot: ", Points_Per_Shot,
@@ -171,24 +183,30 @@ avg_position_ranks.plot <- plot_ly(avg_position_ranks) %>%
                                                     "</br>Shot Total: ", Total_Shots,
                                                     "</br>Ball Time: ", Ball_Time,
                                                     "</br>Age: ", Age) ) %>%
-                          layout(title = "Positional Rankings", 
-                                 xaxis = list(title = "Position"), 
+                          layout(title = "Positional Rankings",
+                                 xaxis = list(title = "Position"),
                                  yaxis = list(title = "Average Ranking"),
                                  bargap = ~Number)
 
-embed_notebook(avg_position_ranks.plot, width = "1000px", height = "1000px")
+avg_position_ranks_gg <- ggplot() +
+                         geom_col(data = avg_position_ranks, aes(x = Position, y = Rank, fill = Points_Per_Shot))
 
+#ggplot2 Graphics
+avg_position_ranks_gg
+
+#Plotly Graphic
+#embed_notebook(avg_position_ranks_plotly)
 ```
 
-
+This ggplot graphic shows how this ranking system plays out with respect to a player's point total, accounting for position and ball time as well.  As one would expect players with high point totals have the highest rankings, and this generally corresponds to more ball time. Looking at the graphic it is also clear that different positions have defined clustering within the data, something that could be explored further.
 ```{r message = FALSE, warning = FALSE}
                           
-player_position_ranks.plot <-  plot_ly() %>%
+player_position_ranks_plotly <-  plot_ly() %>%
                           add_data(player_stats_ranking_data) %>%
-                          add_markers(x = ~Rank, y = ~Point_Total, z = ~Points_Per_Shot,
+                          add_markers(x = ~Ranking, y = ~Point_Total, z = ~Points_Per_Shot,
                                       size = ~Ball_Time, color = ~Position, colors = "Spectral",
                                       text = ~paste("</br>Player: ", Player,
-                                                    "</br>Rank: ", Rank,
+                                                    "</br>Rank: ", Rank, ", Value: ", Ranking,
                                                     "</br>Position: ", Position,
                                                     "</br>Points Per Shot: ", Points_Per_Shot,
                                                     "</br>Point Total: ", Point_Total,
@@ -196,13 +214,74 @@ player_position_ranks.plot <-  plot_ly() %>%
                                                     "</br>Ball Time: ", Ball_Time,
                                                     "</br>Age: ", Age) ) %>%
                           layout(title = "Player Positional Rankings")
+
                           
-embed_notebook(player_position_ranks.plot, width = "1000px", height = "1000px")
+player_position_ranks_gg <- ggplot() + 
+                            geom_point(data = player_stats_ranking_data, aes(x = Ranking, y = Point_Total, size = Ball_Time, color = Position))
+
+#ggplot2 Graphic
+player_position_ranks_gg
+
+#Plotly Graphic
+#embed_notebook(player_position_ranks_plotly)
 
 ```
 
 
+The positional rankings exist in clusters, which means that the rankings for players of the same position are grouped around an expected value (average) with some standard deviation within the grouping.  By modeling the probabilities of players in each position having a certain ranking as a normal distribution, a set of boundaries for identifying a player's position by their ranking within this system begins to appear. For example, the most confident estimate that a player with a certain ranking plays a certain position will map directly to the positional distribution with the highest value for that ranking 
+(e.g. if a player's ranking is less than 1.00, then 'center' would be the best estimate for their position.)
+```{r message = FALSE,  warning = FALSE}
+
+positions <- unlist(sqldf("SELECT DISTINCT( position ) FROM player_stats_ranking_data"))
+position_ranks_stats <- as.data.frame(matrix(0, ncol = length(positions), nrow  = 2))
+colnames(position_ranks_stats) <- positions
+rownames(position_ranks_stats) <- c("mean", "stdDist")
+colors <- c("red", "green", "blue", "yellow", "purple")
+n <- 1
+position_ranks_dist_plotly <- plot_ly()
+
+for(pos in positions)
+{
+  data <- player_stats_ranking_data[player_stats_ranking_data$Position == pos, "Ranking"]
+  position_ranks_stats[,pos] = c(mean(data), sd(data))  
+  yval <- dnorm(data, position_ranks_stats[1,pos], position_ranks_stats[2,pos])
+  
+  position_ranks_dist_plotly <- position_ranks_dist_plotly %>% 
+                                add_markers(x = data, y = yval, colors = "Spectral", name = pos) %>%
+                                add_lines(x = data, y = yval, 
+                                          name = pos, text = paste("Mean Ranking: ", position_ranks_stats[1,pos],
+                                                                   "</br> Std Deviation: ", position_ranks_stats[2, pos]), colors = "Spectral")
+                                
+}
+
+position_ranks_dist_plotly <- position_ranks_dist_plotly %>%
+                              layout(title = "Position Ranking Distributions", xaxis = list(title = "Ranking Value"),
+                                     yaxis = list(title = "Probability %"))
 
 
+datafull <- data.frame("Ranking" = player_stats_ranking_data[player_stats_ranking_data$Position == "C", "Ranking"][1:47],
+                    "PF" = player_stats_ranking_data[player_stats_ranking_data$Position == "PF", "Ranking"][1:47],
+                    "PG" = player_stats_ranking_data[player_stats_ranking_data$Position == "PG", "Ranking"][1:47],
+                    "SF" = player_stats_ranking_data[player_stats_ranking_data$Position == "SF", "Ranking"][1:47],
+                    "SG" = player_stats_ranking_data[player_stats_ranking_data$Position == "SG", "Ranking"][1:47])
+
+datafull$Percentage <- dnorm(datafull$Ranking, position_ranks_stats[1,1], position_ranks_stats[2,1])
+datafull$valPF <- dnorm(datafull$PF, position_ranks_stats[1,2], position_ranks_stats[2,2])
+datafull$valPG<- dnorm(datafull$PG, position_ranks_stats[1,3], position_ranks_stats[2,3])
+datafull$valSF <- dnorm(datafull$SF, position_ranks_stats[1,4], position_ranks_stats[2,4])
+datafull$valSG <- dnorm(datafull$SG, position_ranks_stats[1,5], position_ranks_stats[2,5])
 
 
+position_ranks_dist_gg <- ggplot(datafull) +
+                          geom_line(aes(x = Ranking, y = Percentage, color = "C", name = "C")) +
+                          geom_path(aes(x = PF, y = valPF, color = "PF", name = "PF")) +
+                          geom_path(aes(x = PG, y = valPG, color = "PG", name = "PG")) +
+                          geom_path(aes(x = SF, y = valSF, color = "SF", name = "SF")) +
+                          geom_path(aes(x = SG, y = valSG, color = "SG", name = "SG"))
+#ggplot Graphic
+position_ranks_dist_gg
+
+#plotly Graphic
+#embed_notebook(position_ranks_dist_plotly)
+
+```
