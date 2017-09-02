@@ -1,8 +1,0 @@
-name: Publish Document
-title:
-account: rpubs
-server: rpubs.com
-appId: https://api.rpubs.com/api/v1/document/298952/1508d2fcde35491c9ff8901937324df7
-bundleId: https://api.rpubs.com/api/v1/document/298952/1508d2fcde35491c9ff8901937324df7
-url: http://rpubs.com/duncan96/298952
-when: 1503382130.89951
