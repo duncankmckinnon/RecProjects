@@ -1,0 +1,216 @@
+
+---
+title: "2007-2016 Homeless Point In Time Count by CoC"
+output:
+  html_notebook: default
+  pdf_document: default
+---
+
+#Using the Dataset at: https://data.world/mschnars/2007-2016-homeless-point-in-time-count-by-coc through data.world
+#To run this you may be required to register an account through data.world
+#
+#
+```{r message = FALSE, warning = FALSE}
+suppressMessages({
+  suppressPackageStartupMessages({
+    packages.list <- c('data.world', 'dplyr', 'plotly', 'sqldf', 'RColorBrewer')
+    non_installed <- packages.list[!(packages.list %in% installed.packages()[,"Package"])]
+    if(length(non_installed)) install.packages(non_installed)
+    
+    library('dplyr')
+    library('data.world')
+    library('plotly')
+    library('sqldf')
+    library('RColorBrewer')
+  })
+  homeless_key <- "https://data.world/mschnars/2007-2016-homeless-point-in-time-count-by-coc"
+  
+  tables_qry <- data.world::qry_sql("SELECT * 
+                                    FROM Tables")
+  tables_df <- data.world::query(tables_qry, dataset = homeless_key)
+})
+```
+#
+#
+#
+This query shows the subset of data from the database that will be used in this survey.  This data can be defined as the aggregate counts for measures of homelessness in all state across the range of years for which data is available. Since there are so many different measures used, with many having different names for reporting the same thing or only have data for certain year, this survey is limited on to data on total homelessness, chronic homelessness, veteran homlessness, and sheltered vs. unsheltered homeless:
+```{r message = FALSE, warning = FALSE}
+if (length(tables_df$tableName) > 0) {
+  table_qry <- data.world::qry_sql(sprintf("SELECT year, state, measures, count 
+                                            FROM %s
+                                            WHERE measures IN( \"Chronically Homeless Individuals\",
+                                                               \"Sheltered Homeless\",
+                                                               \"Total Homeless\",
+                                                               \"Unsheltered Homeless\",
+                                                               \"Homeless Veterans\")
+                                            GROUP BY year, state, measures
+                                            ORDER BY year, state", tables_df$tableName[[1]]))
+  homeless_df <- data.world::query(table_qry, dataset = homeless_key)
+  homeless_df
+}
+```
+#
+#
+#
+This Chart shows the counts for homeless populations in each state for the 2016 homeless count, grouped into the categories stated above (Total Homeless, Chronic Homeless, Homeless Veterans, and Sheltered vs. Unsheltered Homeless).
+```{r message = FALSE, warning = FALSE}
+
+homeless_state_measures <- sqldf("SELECT *
+                            FROM homeless_df
+                            GROUP BY state, measures
+                            ORDER BY state")
+
+homeless_data_plotly <- plot_ly(data = homeless_state_measures, x = ~state, y = ~count, color = ~measures, type = "bar") %>%
+  layout(title = "Homeless Population in US by State 2016", 
+         xaxis = list(title = "State"), yaxis = list(title = "Count"))
+
+
+homeless_data_gg <- ggplot() + 
+                    geom_col(data = homeless_state_measures[homeless_state_measures$measures != "Total Homeless",],
+                             aes(x = state, y = count, fill = measures))
+
+#ggplot Graphics
+homeless_data_gg
+
+
+#Plotly Graphics
+#embed_notebook(homeless_data_plotly, width = '1000px', height = '100%')
+```
+#
+#
+#
+Since Washington State has the highest incidence of overall homelessness for the year of 2016, we can look at the trends of these measures over time with a focus on just WA with a specific focus on total homelessness, sheltered vs. unsheltered homelessnessness, chronic homelessness and veteran homelessness.  This will give an idea of whether this level of homelessness in WA is particularly high in 2016 or if there is a long standing trend leading up to this.
+
+```{r message = FALSE, warning = FALSE}
+WA_homeless_data_query <- data.world::qry_sql("SELECT year, measures, SUM(count) 
+                                   FROM 2007_2016_point_in_time_count
+                                   WHERE state = \"WA\" AND measures IN( \"Chronically Homeless Individuals\",
+                                                               \"Sheltered Homeless\",
+                                                               \"Total Homeless\",
+                                                               \"Unsheltered Homeless\",
+                                                               \"Homeless Veterans\")
+                                   GROUP BY year, measures
+                                   ORDER BY year")
+WA_homeless_data <- data.world::query(WA_homeless_data_query, dataset = homeless_key)
+
+
+WA_homeless_plotly <- plot_ly(data = WA_homeless_data, x = ~year, y = ~count, color = ~measures, trace = "scatter") %>% 
+  layout(title = "WA State Homeless Data 2008 - 2016", 
+         xaxis = list(title = "Year"), yaxis = list(title = "Homeless Count"))
+
+
+WA_homeless_gg <- ggplot()+
+                  geom_point(data = WA_homeless_data, aes(x = year, y = count, color = measures))
+
+#ggplot graphics
+WA_homeless_gg
+
+#plotly graphics
+#embed_notebook(WA_homeless_plotly, width = '1000px', height = '100%') 
+
+```
+#
+#
+#
+Since this dataset goes into even greater resolution, we can look at how the homeless population is distributed across the counties of WA state between 2008-2016.
+From this data we can see that King County where Seattle is located is the largest contributor to total homelessness in WA State.  The line marked in yellow shows the aggregate pattern for homeless population accross all the counties in WA.
+```{r message = FALSE, warning = FALSE}
+
+WA_homeless_county_Query <- data.world::qry_sql("SELECT year, coc_name, measures, count
+                                     FROM 2007_2016_point_in_time_count
+                                     WHERE state = \"WA\" AND measures = \"Total Homeless\"
+                                     ORDER BY coc_name, year")
+
+WA_homeless_county_data <- data.world::query(WA_homeless_county_Query , dataset = homeless_key)
+
+colnames(WA_homeless_county_data) <- c("year", "county", "measures", "count")
+
+WA_counties <- WA_homeless_county_data[WA_homeless_county_data$county != "Washington Balance of State CoC", 1:4]
+WA_aggregate <- WA_homeless_county_data[WA_homeless_county_data$county == "Washington Balance of State CoC", 1:4]
+
+
+WA_homeless_countyData_plotly <- plot_ly() %>% add_data(WA_counties) %>%
+  add_trace(x = ~year, y = ~count, color = ~county) %>%
+  add_lines(data = WA_aggregate, x = ~year, y = ~count, color = ~county) %>%
+  layout(title = "Total Homeless Count For WA State Counties 2008 - 2016", xaxis = list(title = "Year"), 
+         yaxis = list(title = "Total Homeless Count"))
+
+#ggplot graphic
+WA_homeless_countyData_gg <- ggplot() +
+                             geom_point(data = WA_counties, aes(x = year, y = count, color = county)) +
+                             geom_line(data = WA_aggregate, aes(x = year, y = count, color = "Statewide Average"))
+
+#ggplot graphic
+WA_homeless_countyData_gg
+
+#plotly graphic
+#embed_notebook(WA_homeless_countyData_plotly, width = "1000px", height = "100%")
+
+```
+#
+#
+#
+To get an idea of how the homeless population fluctuates during this time period, we can look at how the state with the highest total homeless populations count changes year by year during this time period.
+```{r message = FALSE, warning = FALSE}
+
+max_state_count <- sqldf( 'SELECT year, MAX( count ) AS \"count\", state 
+                            FROM homeless_df 
+                            WHERE measures = "Total Homeless" GROUP BY year ORDER BY year')
+
+max_state_count_plotly <- plot_ly(max_state_count, x = ~year, y = ~count, color = ~state) %>%
+  layout( title = "Yearly Max Homeless Count By State 2008 - 2016", 
+          xaxis = list(title = "Year"), yaxis = list(title = "Total Homeless Count"))
+
+
+max_state_count_gg <- ggplot(max_state_count) + 
+                      geom_point(aes(x = year, y = count, color = state))
+
+#ggplot graphics
+max_state_count_gg
+
+#plotly graphics
+#embed_notebook(max_state_count_plotly, width = "1000px", height = "100%")
+
+```
+#
+#
+#
+Over the years the total count of homeless nationwide fluctuates quite a bit, but looking at this graph we can see that it declines over this period dramatically, with the peak appearing to be closely correlated with the beginning of the housing market crash in 2008.
+```{r message = FALSE, warning = FALSE}
+
+hiTot_count_query <- data.world::qry_sql("SELECT year, AVG(count)
+                                          FROM 2007_2016_point_in_time_count 
+                                          WHERE measures = \"Total Homeless\" AND count IN(
+                                            SELECT state, year, SUM(count) 
+                                            FROM 2007_2016_point_in_time_count
+                                            WHERE measures = \"Total Homeless\"
+                                            GROUP BY year)
+                                          GROUP BY year
+                                          ORDER BY year")
+
+
+avg_tot_count <- data.world::query(hiTot_count_query, dataset = homeless_key)
+avg_tot_count_plotly <- plot_ly(avg_tot_count, x = ~year, y = ~count) %>%
+  layout( title = "Average State Homeless Count By Year 2008 - 2016",
+          xaxis = list(title = "Year"), yaxis = list(title = "Average Homeless Count"))
+
+
+avg_tot_count_gg <- ggplot(avg_tot_count) +
+                    geom_line(aes(x = year, y = count, color = "red")) +
+                    geom_point(aes(x = year, y = count, color = "blue"))
+                    
+
+#ggplot graphics
+avg_tot_count_gg
+
+#Plotly graphics
+#embed_notebook(avg_tot_count_plotly)
+```
+
+
+
+
+
+
+
+
