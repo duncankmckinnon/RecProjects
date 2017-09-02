@@ -47,7 +47,7 @@ shots_DF$PTS_TYPE <- ifelse(shots_DF$SHOT_RESULT == "made", shots_DF$PTS_TYPE, 0
 players <- sqldf("SELECT DISTINCT(player_id) AS \"ID\", player_name AS \"PLAYER\"
                           FROM shots_DF
                           ORDER BY ID")
-players
+players[1:10,]
 
 ```
 
@@ -105,10 +105,10 @@ players_stats_plot_gg <- ggplot() +
                       
 
 #ggplot2 Graphic
-players_stats_plot_gg
+#players_stats_plot_gg
 
 #Plotly Graphic
-#players_stats_plot_plotly
+players_stats_plot_plotly
 ```
 
 
@@ -147,7 +147,7 @@ player_stats_ranking_data <- as.data.frame(lapply(player_stats_ranking_data,
                                                         }
                                                   ), stringsAsFactors = FALSE
                                             )
-player_stats_ranking_data
+player_stats_ranking_data[1:10,]
 
 ```
 
@@ -196,10 +196,10 @@ avg_position_ranks_gg <- ggplot() +
                          geom_col(data = avg_position_ranks, aes(x = Position, y = Rank, fill = Points_Per_Shot))
 
 #ggplot2 Graphics
-avg_position_ranks_gg
+#avg_position_ranks_gg
 
 #Plotly Graphic
-#avg_position_ranks_plotly
+avg_position_ranks_plotly
 ```
 
 This ggplot graphic shows how this ranking system plays out with respect to a player's point total, accounting for position and ball time as well.  As one would expect players with high point totals have the highest rankings, and this generally corresponds to more ball time. Looking at the graphic it is also clear that different positions have defined clustering within the data, something that could be explored further.
@@ -224,10 +224,10 @@ player_position_ranks_gg <- ggplot() +
                             geom_point(data = player_stats_ranking_data, aes(x = Ranking, y = Point_Total, size = Ball_Time, color = Position))
 
 #ggplot2 Graphic
-player_position_ranks_gg
+#player_position_ranks_gg
 
 #Plotly Graphic
-#player_position_ranks_plotly
+player_position_ranks_plotly
 
 ```
 
@@ -283,13 +283,12 @@ position_ranks_dist_gg <- ggplot(datafull) +
                           geom_path(aes(x = SF, y = valSF, color = "SF", name = "SF")) +
                           geom_path(aes(x = SG, y = valSG, color = "SG", name = "SG"))
 #ggplot Graphic
-position_ranks_dist_gg
+#position_ranks_dist_gg
 
 #plotly Graphic
-#position_ranks_dist_plotly
+position_ranks_dist_plotly
 
 ```
-
 
 
 

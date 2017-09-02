@@ -63,7 +63,7 @@ raw_data_plotly <- plot_ly(raw_data_nonViolent) %>%
 suppressWarnings({raw_data_plotly})
 
 ```
-Raw Set of Police Shooting Data
+This graph represents the date, age and ethnicity of each person shot in the US by police between 2015-2017 and who was also reported as nonviolent.  Although the variables seem distributed accross the features, there are clearly more people below 50 who are shot by killed during this time, and most of them were identified as white.  This fits the trends within the population at a high level, because whites do make up the true majority in the USA.
 ```{r message = F, warning = F}
 cityShootings <- sqldf("Select COUNT(City) As Shootings, LOWER(City) As City, 
                         State, Race
@@ -110,8 +110,8 @@ cityShooting_geo_plotly
 #cityShooting_geo_gg
 ```
 
-There is no question that police shootings of non-violent civilians are rare events.  This map shows the number of civilians killed in major cities across the US. According to this dataset, the chances of being killed in any non-violent encounter with police for a civilian are around 1/100141.
-```{r}
+There is no question that police shootings of non-violent civilians are rare events.  This map shows the number of civilians killed in major cities across the US. According to this combined dataset, the chances of any civilian, with any features being killed in any non-violent encounter with police is around 1/100141.  By looking more closely at the features used to identify individuals, we can see how that average holds up across all races, ages and genders, or if people with certain features in certain places are more likely to be killed by police on aggregate.
+```{r message = F, warning= F}
 ByRaceCount <- sqldf("SELECT race As Race, COUNT( race ) As Number
                       FROM raw_data_nonViolent
                       GROUP BY race")
@@ -142,7 +142,10 @@ ByRaceCount_plotly <- plot_ly() %>%
 
 ByRaceCount_plotly
 ```
+These pie charts show how the total number of non-violent offenders killed by police is distributed by ethnicity compared with the distribution of ethnicities across the population.  If there were no racial bias in the victims of police killings, the percentages of people of each ethnicity killed in non-violent encounters with police would roughly match the racial breakdown of the population in which they all exist because it would be randomized. Instead, this data shows that there is a strong bias for black victims being killed in non-violent encounters, with close to double the expected instances occuring.  The reason for this bias cannot be derived from the data with only the analysis provided thus far, but further exploration will attempt to determine if there is a reasonable cause within the available data.
+```{r}
 
+```
 
 
 

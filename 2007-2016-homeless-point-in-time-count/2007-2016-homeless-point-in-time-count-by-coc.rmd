@@ -11,11 +11,17 @@ output:
 #
 #
 ```{r message = FALSE, warning = FALSE}
-suppressMessages({
   suppressPackageStartupMessages({
     packages.list <- c('data.world', 'dplyr', 'plotly', 'sqldf', 'RColorBrewer')
     non_installed <- packages.list[!(packages.list %in% installed.packages()[,"Package"])]
-    if(length(non_installed)) install.packages(non_installed)
+    if(length(non_installed)) 
+    {
+      install.packages(non_installed)
+      if(is.null(getOption("dw.auth_token")))
+      {
+        data.world::set_config(data.world::save_config(auth_token = dw_token)) #plug in your token
+      }
+    }
     
     library('dplyr')
     library('data.world')
@@ -27,8 +33,9 @@ suppressMessages({
   
   tables_qry <- data.world::qry_sql("SELECT * 
                                     FROM Tables")
+  
   tables_df <- data.world::query(tables_qry, dataset = homeless_key)
-})
+
 ```
 #
 #
@@ -46,7 +53,7 @@ if (length(tables_df$tableName) > 0) {
                                             GROUP BY year, state, measures
                                             ORDER BY year, state", tables_df$tableName[[1]]))
   homeless_df <- data.world::query(table_qry, dataset = homeless_key)
-  homeless_df
+  homeless_df[1:10,]
 }
 ```
 #
