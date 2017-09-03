@@ -5,14 +5,23 @@ output: html_document
 ---
 #Civilians shot and killed by on-duty police officers in United States
 #From Location: https://www.kaggle.com/washingtonpost/police-shootings
+#May require membership in data.world to run properly
 
 
 ```{r messages = F, warning = F}
 suppressPackageStartupMessages(
   {
-    package_list <- c('plotly', 'maps', 'foreach','RColorBrewer', 'dplyr', 'stringr', 'sqldf', 'magrittr','webshot')
+    package_list <- c('data.world','plotly', 'maps', 'foreach','RColorBrewer', 'dplyr', 'stringr', 'sqldf', 'magrittr','webshot')
     non_installed <- package_list[!(package_list %in% installed.packages()[,"Package"])]
-    if(length(non_installed)) install.packages(non_installed)
+    if(length(non_installed)) 
+    {
+      install.packages(non_installed)
+      if(is.null(getOption("dw.auth_token")))
+      {
+        data.world::set_config(data.world::save_config(auth_token = dw_token)) #plug in your token if needed
+      }
+    }
+    library('data.world')
     library('plotly')
     library('maps')
     library('foreach')
@@ -29,7 +38,12 @@ suppressPackageStartupMessages(
 load required R packages
 
 ```{r message = F, warning = F}
-raw_data <- read.csv("police_shootings.csv", stringsAsFactors = F)
+
+#load from data.world
+data_key <- "https://data.world/data-society/fatal-police-shootings"
+raw_data_qry <- qry_sql("SELECT * FROM Tables")
+raw_data_tables <- query(qry = raw_data_qry, data_key)
+raw_data <- query(qry_sql(sprintf("Select * From %s", raw_data_tables$tableName[[1]])), data_key)
 raw_data <- raw_data[complete.cases(raw_data),]
 
 #Data Cleaning
@@ -54,7 +68,8 @@ raw_data_nonViolent <- sqldf("SELECT *
                        WHERE Attack")
 
 raw_data_plotly <- plot_ly(raw_data_nonViolent) %>%
-                   add_markers(x = ~Date, y = ~Age, color = ~Race,
+                   add_markers(x = ~Date, y = ~Age, color = ~Race, 
+                               colors = "Spectral",
                                text = ~paste("</br>Name: ", Name,
                                              "</br>Race: ", Race,
                                              "</br>Gender: ", Gender)) %>%
@@ -143,7 +158,10 @@ ByRaceCount_plotly <- plot_ly() %>%
 ByRaceCount_plotly
 ```
 These pie charts show how the total number of non-violent offenders killed by police is distributed by ethnicity compared with the distribution of ethnicities across the population.  If there were no racial bias in the victims of police killings, the percentages of people of each ethnicity killed in non-violent encounters with police would roughly match the racial breakdown of the population in which they all exist because it would be randomized. Instead, this data shows that there is a strong bias for black victims being killed in non-violent encounters, with close to double the expected instances occuring.  The reason for this bias cannot be derived from the data with only the analysis provided thus far, but further exploration will attempt to determine if there is a reasonable cause within the available data.
-```{r}
+```{r message = F, warning = F}
+#instances of violent encounters
+
+
 
 ```
 
