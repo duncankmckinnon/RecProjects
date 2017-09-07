@@ -8,20 +8,22 @@ This project aims to explore data on housing prices in an effort to design a mod
 
 
 ```{r}
-knitr::opts_chunk$set(message = F, warning = F, strip.white = F, tidy = T)
+
 suppressPackageStartupMessages
 (
   {
     #install or load required packages into the workspace
-    package_list <- c('tidyverse', 'plotly','RColorBrewer','sqldf')
+    package_list <- c('tidyverse', 'knitr', 'plotly','RColorBrewer','sqldf')
     non_installed <- package_list[!(package_list %in% installed.packages()[,"Package"])]
     if(length(non_installed)) install.packages(non_installed)
-    library('tidyverse')
+    #library('tidyverse')
     library('plotly')
     library('RColorBrewer')
     library('sqldf')
+    library('knitr')
   }
 )
+knitr::opts_chunk$set(message = F, warning = F, strip.white = F, tidy = T)
 ```
 load in the required packages
 
@@ -58,9 +60,9 @@ This dataset is very large, so in order to get a better visual representation of
 ```{r}
 #Look at the distributions:
 p1 <- plot_ly() %>% add_markers(name = "Pricing", x = 1:200, y = housing_data_sample$price) %>% layout(title = "King County Housing Feature Distributions")
-p2 <- plot_ly() %>% add_markers(name = "Rating", x = 1:200, y = housing_data_sample$grade)
-p3 <- plot_ly() %>% add_markers(name = "Sq. Footage", x = 1:200, y = housing_data_sample$sqft_lot)
-p4 <- plot_ly() %>% add_markers(name = "Year Built", x = 1:200, y = housing_data_sample$yr_built)
+p2 <- plot_ly() %>% add_markers(name = "Rating", x = housing_data_sample$price, y = housing_data_sample$grade)
+p3 <- plot_ly() %>% add_markers(name = "Sq. Footage", x = housing_data_sample$price, y = housing_data_sample$sqft_lot)
+p4 <- plot_ly() %>% add_markers(name = "Year Built", x = housing_data_sample$price, y = housing_data_sample$yr_built)
 subplot(p1, p2, p3, p4, nrows = 2)
 ```
 
@@ -69,8 +71,8 @@ subplot(p1, p2, p3, p4, nrows = 2)
 ```{r message = F, warning = F}
 #split data for training
 #test general linear model on relevant quantitative data
-train_set_glm <- housing_data_sample_reg[, !(colnames(housing_data_sample_reg) %in% c("price", "yr_built", "yr_renovated", "lat", "long", "zipcode"))]
-train_price <- housing_data_sample_reg[, "price"]
+train_set_glm <- housing_data_sample[, !(colnames(housing_data_sample) %in% c("price", "yr_renovated", "lat", "long", "zipcode"))]
+train_price <- housing_data_sample[, "price"]
 
 glm_mod <- glm.fit(x = train_set_glm, y = train_price)
 
