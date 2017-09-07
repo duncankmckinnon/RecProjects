@@ -41,50 +41,76 @@ load in dataset and remove unused features
 
 ```{r}
 #collect a random sampling of the dataset ordered by price
-sample_values <- sample(dim(housing_data)[1], 200)
+train_vals <- sample(dim(housing_data)[1], 1000)
+test_vals <- sample(dim(housing_data)[1], 200)
 
-housing_data_sample <- as.data.frame(housing_data_rev[sample_values,])
+#full test set?
+#test_vals <- !(1:dim(housing_data)[1] %in% train_vals)
 
-housing_data_sample <- sqldf("Select * 
-                           From housing_data_sample
-                           Order By price desc")
+housing_train_data <- as.data.frame(housing_data_rev[train_vals,])
+housing_train_data <- housing_train_data[order(-housing_train_data$price),]
+housing_test_data <- as.data.frame(housing_data_rev[test_vals,])
+housing_test_data <- housing_test_data[order(-housing_test_data$price),]
 
-sqldf("Select price As Pricing, grade As Rating, sqft_lot As Sq_Footage, yr_built As Year_Built
-       From housing_data_sample
+sqldf("Select price As Pricing, grade As Rating, condition As Condition, sqft_lot As Sq_Footage 
+       From housing_train_data
        Limit 20")
 
 ```
-This dataset is very large, so in order to get a better visual representation of the distribution of the data, a sample of 200 randomly chosen rows is used instead of the whole dataset (ordered by price, as this is the dependent variable).  The sample indexes are selected at runtime every time the script runs, so the data and analysis are different each time the script is run. Because the sampling is random and the dataset is homogenous and static, the 200 rows chosen should always be representative of the nature of the whole dataset.
+This dataset is very large, so in order to get a better visual representation of the distribution of the data, a sample of 1000 randomly chosen rows is used instead of the whole dataset (ordered by price, as this is the dependent variable).  The sample indexes are selected at runtime every time the script runs, so the data and analysis are different each time the script is run. Because the sampling is random and the dataset is homogenous and static, the 1000 rows chosen should always be representative of the nature of the whole dataset.
 
 
 ```{r}
 #Look at the distributions:
-p1 <- plot_ly() %>% add_markers(name = "Pricing", x = 1:200, y = housing_data_sample$price) %>% layout(title = "King County Housing Feature Distributions")
-p2 <- plot_ly() %>% add_markers(name = "Rating", x = housing_data_sample$price, y = housing_data_sample$grade)
-p3 <- plot_ly() %>% add_markers(name = "Sq. Footage", x = housing_data_sample$price, y = housing_data_sample$sqft_lot)
-p4 <- plot_ly() %>% add_markers(name = "Year Built", x = housing_data_sample$price, y = housing_data_sample$yr_built)
+p1 <- plot_ly() %>% add_markers(name = "Pricing", x = 1:1000, y = housing_train_data$price) %>% layout(title = "King County Housing Feature Distributions")
+p2 <- plot_ly() %>% add_markers(name = "Rating v Pricing", x = housing_train_data$grade, y = housing_train_data$price)
+p3 <- plot_ly() %>% add_markers(name = "Condition v Pricing", x = housing_train_data$condition, y = housing_train_data$price)
+p4 <- plot_ly() %>% add_markers(name = "Sq. Footage v Pricing", x = housing_train_data$sqft_lot, y = housing_train_data$price)
+
 subplot(p1, p2, p3, p4, nrows = 2)
 ```
-
-
+Looking at the distributions of prices by magnitude, it appears to follow a power law distribution that isn't mirrored in the distributions of the other features seen here.  Assuming that the features in this dataset capture most of the factors that influence the pricing of a home, some linear combination of the features could give a reasonable estimate for the pricing of an individual house.  Since the distribution is closer to a power law, two seperate linear functions should give a pretty good estimate by accounting for the 'knee' in the pricing distribution.  First though, we'll try fitting a single line to the data and see what kind of error comes out.
 
 ```{r message = F, warning = F}
 #split data for training
 #test general linear model on relevant quantitative data
-train_set_glm <- housing_data_sample[, !(colnames(housing_data_sample) %in% c("price", "yr_renovated", "lat", "long", "zipcode"))]
-train_price <- housing_data_sample[, "price"]
 
-glm_mod <- glm.fit(x = train_set_glm, y = train_price)
+housing_train_price <- housing_train_data[, "price"]
+housing_test_price <- housing_test_data[, "price"]
 
-price_mod <- fitted(glm_mod)
+
+glm_mod <- glm(price ~ bedrooms + bathrooms + sqft_living + sqft_lot + condition + grade + yr_built + yr_renovated, data = housing_train_data)
+
+price_mod <- predict(glm_mod, newdata = housing_test_data)
 
 price_est_plotly <- plot_ly() %>% 
-  add_markers(name = "actual price", x = 1:length(train_price), y = train_price) %>%
-  add_markers(name = "linear model est", x = 1:length(price_mod), y = price_mod) %>%
-  add_lines(name = "magnitude difference", x = 1:length(train_price), y = price_mod - train_price) %>%
-  layout(title = "Attempted Linear Regression Model </br> 
+  add_markers(name = "Test Set Price", x = 1:length(housing_test_price), y = housing_test_price) %>%
+  add_markers(name = "Linear Model est", x = 1:length(housing_test_price), y = price_mod) %>%
+  add_lines(name = "Magnitude Difference", x = 1:length(housing_test_price), y = price_mod - housing_test_price) %>%
+  layout(title = "Attempting Linear Regression Model </br> 
          for Pricing Homes in King County </br>")
 
 price_est_plotly
 ```
+Given that the distribution of prices was already known to follow a power law distribution, the result of this linear estimate isn't very surprising.  The linear fit is good for the long tail, but the whole is corrupted by trying to fit the collection of values above the elbow.
+
+```{r}
+
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
