@@ -7,7 +7,7 @@ output: html_notebook
 This project aims to explore data on housing prices in an effort to design a model for estimating pricing and other behaviors of the housing market, specifically within King County. 
 
 
-```{r}
+```{r message = F, warning = F, echo = F, strip.white = F, tidy = T}
 
 suppressPackageStartupMessages
 (
@@ -52,6 +52,9 @@ housing_train_data <- housing_train_data[order(-housing_train_data$price),]
 housing_test_data <- as.data.frame(housing_data_rev[test_vals,])
 housing_test_data <- housing_test_data[order(-housing_test_data$price),]
 
+freq_train <- hist(housing_train_data$price, 
+             n = 1000, plot = F)
+
 sqldf("Select price As Pricing, grade As Rating, condition As Condition, sqft_lot As Sq_Footage 
        From housing_train_data
        Limit 20")
@@ -62,14 +65,22 @@ This dataset is very large, so in order to get a better visual representation of
 
 ```{r}
 #Look at the distributions:
-p1 <- plot_ly() %>% add_markers(name = "Pricing", x = 1:1000, y = housing_train_data$price) %>% layout(title = "King County Housing Feature Distributions")
-p2 <- plot_ly() %>% add_markers(name = "Rating v Pricing", x = housing_train_data$grade, y = housing_train_data$price)
-p3 <- plot_ly() %>% add_markers(name = "Condition v Pricing", x = housing_train_data$condition, y = housing_train_data$price)
-p4 <- plot_ly() %>% add_markers(name = "Sq. Footage v Pricing", x = housing_train_data$sqft_lot, y = housing_train_data$price)
+p1 <- plot_ly() %>% add_markers(name = "Pricing",
+                                x = 1:length(housing_train_data$price), 
+                                y = housing_train_data$price) %>% layout(title = "King County Housing Feature Distributions")
+p2 <- plot_ly() %>% add_markers(name = "Rating v Pricing", 
+                                x = housing_train_data$grade, 
+                                y = housing_train_data$price)
+p3 <- plot_ly() %>% add_markers(name = "Condition v Pricing", 
+                                x = housing_train_data$condition, 
+                                y = housing_train_data$price)
+p4 <- plot_ly() %>% add_markers(name = "Sq. Footage v Pricing", 
+                                x = housing_train_data$sqft_lot, 
+                                y = housing_train_data$price)
 
 subplot(p1, p2, p3, p4, nrows = 2)
 ```
-Looking at the distributions of prices by magnitude, it appears to follow a power law distribution that isn't mirrored in the distributions of the other features seen here.  Assuming that the features in this dataset capture most of the factors that influence the pricing of a home, some linear combination of the features could give a reasonable estimate for the pricing of an individual house.  Since the distribution is closer to a power law, two seperate linear functions should give a pretty good estimate by accounting for the 'knee' in the pricing distribution.  First though, we'll try fitting a single line to the data and see what kind of error comes out.
+Looking at the distributions of prices over their ordering by magnitude, it appears that the prices of houses that are below \$1-2 million follow a linear decline, with all houses above \$1-2 million increasing sharply in their prices and bucking the trend.  Assuming that the features in this dataset capture most of the factors that influence the pricing of a home, some linear combination of the features could give a reasonable estimate for the pricing of an individual house below \$1-2 million.  Since the distribution is closer to a power law, two seperate linear functions should give a pretty good estimate by accounting for the 'knee' in the pricing distribution.  First though, we'll try fitting a single line to the data and see what kind of error comes out.
 
 ```{r message = F, warning = F}
 #split data for training
@@ -79,24 +90,63 @@ housing_train_price <- housing_train_data[, "price"]
 housing_test_price <- housing_test_data[, "price"]
 
 
-glm_mod <- glm(price ~ bedrooms + bathrooms + sqft_living + sqft_lot + condition + grade + yr_built + yr_renovated, data = housing_train_data)
+glm_mod <- glm(price ~ sqft_living + sqft_lot + condition + grade + yr_built + yr_renovated, data = housing_train_data)
+
+eqn <- paste("Price = Living Space * ", glm_mod$coefficients[2],
+             " + Lot Space * ",glm_mod$coefficients[3],
+             " + Condition * ", glm_mod$coefficients[4],
+             " + Rating * ", glm_mod$coefficients[5],
+             " + Year Built * ", glm_mod$coefficients[6],
+             " + Year Renovated * ", glm_mod$coefficients[7],
+             " + ", glm_mod$coefficients[1])
 
 price_mod <- predict(glm_mod, newdata = housing_test_data)
+xvals <- 1:length(price_mod)
 
 price_est_plotly <- plot_ly() %>% 
-  add_markers(name = "Test Set Price", x = 1:length(housing_test_price), y = housing_test_price) %>%
-  add_markers(name = "Linear Model est", x = 1:length(housing_test_price), y = price_mod) %>%
-  add_lines(name = "Magnitude Difference", x = 1:length(housing_test_price), y = price_mod - housing_test_price) %>%
-  layout(title = "Attempting Linear Regression Model </br> 
-         for Pricing Homes in King County </br>")
+  add_markers(name = "Test Set Price", x = xvals, y = housing_test_price) %>%
+  add_markers(name = "Linear Model est", x = xvals, y = price_mod) %>%
+  add_lines(name = "Magnitude Difference", x = xvals, y = price_mod - housing_test_price) %>%
+  layout(title = "Attempting Linear Regression Model
+         for Pricing Homes in King County")
 
 price_est_plotly
+#knit_print(eqn)
 ```
-Given that the distribution of prices was already known to follow a power law distribution, the result of this linear estimate isn't very surprising.  The linear fit is good for the long tail, but the whole is corrupted by trying to fit the collection of values above the elbow.
+Given that the distribution of prices was already known to follow a non-linear distribution, the result of this linear estimate isn't very surprising.  The linear fit may have been within a few hundred thousand dollars for the long tail, but the whole seems to be corrupted in trying to fit the collection of values above the elbow.  Below around \$1 million dollars, the housing prices are pretty evenly distributed, but as the prices increase they start jumping up by orders of magnitude.  Lets try the same approach for all values of price < $1 million
 
 ```{r}
+housing_train_data_rev1 <- housing_train_data[housing_train_data$price < 1e6, ]
+housing_train_price_rev1 <- housing_train_price[housing_train_price < 1e6]
+housing_test_data_rev1 <- housing_test_data[housing_test_data$price < 1e6, ]
+housing_test_price_rev1 <- housing_test_price[housing_test_price < 1e6]
 
+glm_mod_rev1 <- glm(price ~ sqft_living + sqft_lot + condition + grade + yr_built + yr_renovated, data = housing_train_data_rev1)
 
+eqn_rev1 <- paste("Price = Living Space * ", glm_mod_rev1$coefficients[2],
+             " + Lot Space * ",glm_mod_rev1$coefficients[3],
+             " + Condition * ", glm_mod_rev1$coefficients[4],
+             " + Rating * ", glm_mod_rev1$coefficients[5],
+             " + Year Built * ", glm_mod_rev1$coefficients[6],
+             " + Year Renovated * ", glm_mod_rev1$coefficients[7],
+             " + ", glm_mod_rev1$coefficients[1])
+
+price_mod_rev1 <- predict(glm_mod_rev1, newdata = housing_test_data_rev1)
+xvals_rev1 <- 1:length(price_mod_rev1)
+
+price_est_plotly_rev1 <- plot_ly() %>% 
+  add_markers(name = "Test Set Price", x = xvals_rev1, y = housing_test_price_rev1) %>%
+  add_markers(name = "Linear Model est", x = xvals_rev1, y = price_mod_rev1) %>%
+  add_lines(name = "Magnitude Difference", x = xvals_rev1, y = price_mod_rev1 - housing_test_price_rev1,
+            text = eqn) %>%
+  layout(title = "Attempting Linear Regression Model 
+         for Pricing Homes in King County
+         Where Price of Home < $1 million")
+
+price_est_plotly_rev1
+#knit_print(eqn_rev1)
+```
+```{r}
 
 ```
 
