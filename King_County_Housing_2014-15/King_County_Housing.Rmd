@@ -12,7 +12,7 @@ This project aims to explore data on housing prices in an effort to design a mod
 suppressPackageStartupMessages(
   {
     #install or load required packages into the workspace
-    package_list <- c('tidyverse', 'knitr', 'plotly','RColorBrewer','sqldf')
+    package_list <- c('tidyverse', 'knitr', 'plotly','RColorBrewer','sqldf','MicrosoftML')
     non_installed <- package_list[!(package_list %in% installed.packages()[,"Package"])]
     if(length(non_installed)) install.packages(non_installed)
     require('dplyr')
@@ -20,6 +20,7 @@ suppressPackageStartupMessages(
     require('RColorBrewer')
     require('sqldf')
     require('knitr')
+    require('MicrosoftML')
   }
 )
 knitr::opts_chunk$set(message = F, warning = F, strip.white = F, tidy = T)
@@ -39,17 +40,6 @@ load in dataset and remove unused features
 
 
 ```{r}
-#collect a random sampling of the dataset ordered by price
-# train_vals <- sample_n(dim(housing_data)[1], 1000)
-# test_vals <- sample(dim(housing_data)[1], 200)
-# 
-# #full test set?
-# #test_vals <- !(1:dim(housing_data)[1] %in% train_vals)
-# 
-# housing_train_data <- as.data.frame(housing_data_rev[train_vals,])
-# housing_train_data <- housing_train_data[order(-housing_train_data$price),]
-# housing_test_data <- as.data.frame(housing_data_rev[test_vals,])
-# housing_test_data <- housing_test_data[order(-housing_test_data$price),]
 
 #using dplyr sampling to collect and random samplings
 housing_train_data <- housing_data_rev %>% select(c(1,4,5,9,10,13,14)) %>% sample_n(1000) %>%
@@ -100,10 +90,10 @@ Looking at the distributions of prices over their ordering by magnitude, it appe
 suppressWarnings(
   {
   housing_train_data_scaled <- housing_train_data %>% mutate_at(funs(scale(.) %>% as.vector),
-                                                                 .vars = 2:length(housing_train_data))
+                                                                 .cols = 2:length(housing_train_data))
 
   housing_test_data_scaled <- housing_test_data %>% mutate_at(funs(scale(.) %>% as.vector),
-                                                               .vars = 2:length(housing_test_data))
+                                                               .cols = 2:length(housing_test_data))
   max_test <- apply(housing_test_data_scaled, FUN = max, MARGIN = 2)
   min_test <- apply(housing_test_data_scaled, FUN = min, MARGIN = 2)
   mean_test <- apply(housing_test_data_scaled, FUN = mean, MARGIN = 2)
@@ -114,33 +104,23 @@ housing_train_price <- housing_train_data[, "price"]
 housing_test_price <- housing_test_data[, "price"]
 
 
-glm_mod <- glm(price ~ sqft_living + sqft_lot + condition + grade + yr_built + yr_renovated, data = housing_train_data_scaled)
+glm_mod <- rxFastLinear(price ~ sqft_living + grade + condition, data = housing_train_data_scaled, type = "regression", verbose = 0)
 
-eqn <- paste("Price = Living Space * ", glm_mod$coefficients[2],
-             " + Lot Space * ",glm_mod$coefficients[3],
-             " + Condition * ", glm_mod$coefficients[4],
-             " + Rating * ", glm_mod$coefficients[5],
-             " + Year Built * ", glm_mod$coefficients[6],
-             " + Year Renovated * ", glm_mod$coefficients[7],
-             " + ", glm_mod$coefficients[1])
 
-price_mod <- as.numeric(predict(glm_mod, newdata = housing_test_data_scaled))
-maxVal_Test <- glm_mod$coefficients[1] + sum(glm_mod$coefficients[2:7] * max_test[2:7])
-minVal_Test <- glm_mod$coefficients[1] + sum(glm_mod$coefficients[2:7] * min_test[2:7])
-yLine <- seq(maxVal_Test, minVal_Test, length.out = length(price_mod))
-xvals <- 1:length(price_mod)
+price_mod <- rxPredict(glm_mod, data = housing_test_data_scaled, verbose = 0, extraVarsToWrite = c("sqft_living", "grade","condition"))
+
+ xvals <- 1:length(price_mod$Score)
 
 price_est_plotly <- plot_ly() %>% 
   add_markers(name = "Test Set Price", x = xvals, y = housing_test_price$price) %>%
-  add_markers(name = "Linear Model est", x = xvals, y = price_mod) %>%
-#  add_lines(name = "Linear Fit", x = xvals, y = yLine) %>%
-  add_lines(name = "Magnitude Difference", x = xvals, y = price_mod - housing_test_price$price) %>%
+  add_markers(name = "Linear Model est", x = xvals, y = price_mod$Score) %>%
+  add_lines(name = "Magnitude Difference", x = xvals, y = price_mod$Score - housing_test_price$price) %>%
   layout(title = "Attempting Linear Regression Model
-         for Pricing Homes in King County")
+                  </br> for Pricing Homes in King County")
 
+rxLinePlot(Score ~ sqft_living + grade + condition, type = c("p", "r"), data = price_mod)
 price_est_plotly
 #summary(glm_mod)
-#knit_print(eqn)
 ```
 Given that the distribution of prices was already known to follow a non-linear distribution, the result of this linear estimate isn't very surprising.  The linear fit may have been within a few hundred thousand dollars for the long tail, but the whole seems to be corrupted in trying to fit the collection of values above the elbow.  Below around \$1 million dollars, the housing prices are pretty evenly distributed, but as the prices increase they start jumping up by orders of magnitude.  Lets try the same approach for all values of price < $600K
 
@@ -154,38 +134,29 @@ min_test_rev1 <- apply(housing_test_data_rev1, FUN = min, MARGIN = 2)
 mean_test_rev1 <- apply(housing_test_data_rev1, FUN = mean, MARGIN = 2)
 
 
-glm_mod_rev1 <- glm(price ~ sqft_living + sqft_lot + condition + grade + yr_built + yr_renovated, data = housing_train_data_rev1)
+glm_mod_rev1 <- glm(price ~ sqft_living + sqft_lot, data = housing_train_data_rev1)
 
-
-
-eqn_rev1 <- paste("Price = Living Space * ", glm_mod_rev1$coefficients[2],
-             " + Lot Space * ",glm_mod_rev1$coefficients[3],
-             " + Condition * ", glm_mod_rev1$coefficients[4],
-             " + Rating * ", glm_mod_rev1$coefficients[5],
-             " + Year Built * ", glm_mod_rev1$coefficients[6],
-             " + Year Renovated * ", glm_mod_rev1$coefficients[7],
-             " + ", glm_mod_rev1$coefficients[1])
 
 price_mod_rev1 <- as.numeric(predict(glm_mod_rev1, newdata = housing_test_data_rev1))
-maxVal_Test_rev1 <- glm_mod_rev1$coefficients[1] + 
-                    sum(glm_mod_rev1$coefficients[2:7] * mean_test_rev1[2:7])
-yLine_rev1 <- seq(glm_mod_rev1$coefficients[1], maxVal_Test_rev1, length.out = length(price_mod_rev1))
 xvals_rev1 <- 1:length(price_mod_rev1)
 
 price_est_plotly_rev1 <- plot_ly() %>% 
   add_markers(name = "Test Set Price", x = xvals_rev1, y = housing_test_price_rev1$price) %>%
   add_markers(name = "Linear Model est", x = xvals_rev1, y = price_mod_rev1) %>%
-#  add_lines(name = "Linear Fit", x = xvals_rev1, y = yLine_rev1) %>%
   add_lines(name = "Magnitude Difference", x = xvals_rev1, y = price_mod_rev1 - housing_test_price_rev1$price) %>%
-  layout(title = "Attempting Linear Regression Model 
-         for Pricing Homes in King County
-         Where Price of Home < $1 million")
+  layout(title = "Attempting Linear Regression Model
+                  </br>for Pricing Homes in King County
+                  </br>Where Price of Home < $800k")
 
 price_est_plotly_rev1
 #summary(glm_mod_rev1)
-#knit_print(eqn_rev1)
 ```
 ```{r}
+require('e1071')
+svm_mod <- svm(price ~ ., data = housing_train_data, gamma = 0.1)
+svm_pred <- predict(svm_mod, data = housing_test_data)
+
+plot(housing_test_data$price, )
 
 ```
 
