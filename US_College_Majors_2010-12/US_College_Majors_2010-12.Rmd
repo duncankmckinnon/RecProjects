@@ -5,7 +5,21 @@ output: html_notebook
 ---
 
 ```{r message = F, warning = F}
-require('dplyr')
+suppressPackageStartupMessages(
+  {
+    require('dplyr')
+    require('plotly')
+    require('readr')
+  }
+)
 Ranking_Data <- update_datasets(F)
+recent_grads <- as.tbl(Ranking_Data[['recent-grads.csv']])
+
+recent_grads_stats <- list("MEANS" = sapply(recent_grads[,], FUN = function(x){ifelse(is.numeric(x), mean(x), 0)}), 
+                           "STDEVS" = sapply(recent_grads, FUN = function(x){ifelse(is.numeric(x), sd(x), 0)}))
+
+recent_grads %>% arrange(desc(Rank)) %>% vars(Rank, Major, Major_category, Men, Women, )
+
+
 ```
 
