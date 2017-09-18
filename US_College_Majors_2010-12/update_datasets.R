@@ -6,8 +6,8 @@ update_datasets <- function(x = T)
   file_list <- list()
   for(i in 1:length(fnames))
   {
-    fname <- str_c('https://raw.githubusercontent.com/duncankmckinnon/data/master/college-majors/', fnames[i])
-    file_list[[fnames[i]]] <- read.csv(url(fname), stringsAsFactors = F)
+    fname <- str_c('https://raw.githubusercontent.com/duncankmckinnon/RecProjects/master/US_College_Majors_2010-12/', fnames[i])
+    file_list[[fnames[i]]] <- read.csv(url(fname), stringsAsFactors = F, skipNul = T, blank.lines.skip = T)
     if(x){write.csv(file, fnames[i])}
   }
   return(file_list)
