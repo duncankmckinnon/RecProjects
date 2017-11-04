@@ -12,7 +12,7 @@ This project aims to explore data on housing prices in an effort to design a mod
 suppressPackageStartupMessages(
   {
     #install or load required packages into the workspace
-    package_list <- c('tidyverse', 'knitr', 'plotly','RColorBrewer','sqldf','MicrosoftML')
+    package_list <- c('tidyverse', 'knitr', 'plotly','RColorBrewer','sqldf', 'stringr','tensorflow')
     non_installed <- package_list[!(package_list %in% installed.packages()[,"Package"])]
     if(length(non_installed)) install.packages(non_installed)
     require('dplyr')
@@ -20,7 +20,8 @@ suppressPackageStartupMessages(
     require('RColorBrewer')
     require('sqldf')
     require('knitr')
-    require('MicrosoftML')
+    require('stringr')
+    require('tensorflow')
   }
 )
 knitr::opts_chunk$set(message = F, warning = F, strip.white = F, tidy = T)
@@ -35,17 +36,13 @@ suppressWarnings({housing_data <- as.tbl(read.csv("kc_house_data.csv", stringsAs
 
 #remove unused columns and normalize the data
 housing_data_rev <- housing_data[, 3:21]
-```
-load in dataset and remove unused features
 
-
-```{r}
 
 #using dplyr sampling to collect and random samplings
-housing_train_data <- housing_data_rev %>% select(c(1,4,5,9,10,13,14)) %>% sample_n(1000) %>%
+housing_train_data <- housing_data_rev %>% select(c(1,4,5,9,10,13,14)) %>% sample_n(10000) %>%
                                            arrange(desc(price))
                                                    
-housing_test_data <- housing_data_rev %>% select(c(1,4,5,9,10,13,14)) %>% sample_n(200) %>%
+housing_test_data <- housing_data_rev %>% select(c(1,4,5,9,10,13,14)) %>% sample_n(2000) %>%
                                           arrange(desc(price))
                                                     
 
@@ -54,11 +51,11 @@ price_stats <- list("train_mean" = mean(housing_train_data$price),
                     "test_mean" = mean(housing_test_data$price),
                     "test_SD" = sd(housing_test_data$price))
 
-sqldf("Select price As Pricing, grade As Rating, condition As Condition, sqft_lot As Sq_Footage  
-       From housing_train_data
-       Limit 20")
-
+price_stats
 ```
+load in dataset and remove unused features
+
+
 This dataset is very large, so in order to get a better visual representation of the distribution of the data, a sample of 1000 randomly chosen rows is used instead of the whole dataset (ordered by price, as this is the dependent variable).  The sample indexes are selected at runtime every time the script runs, so the data and analysis are different each time the script is run. Because the sampling is random and the dataset is homogenous and static, the 1000 rows chosen should always be representative of the nature of the whole dataset.
 
 
@@ -83,24 +80,44 @@ subplot(p1, p2, p3, p4, nrows = 2)
 Looking at the distributions of prices over their ordering by magnitude, it appears that the prices of houses that are below \$1-2 million follow a linear decline, with all houses above \$1-2 million increasing sharply in their prices and bucking the trend.  Assuming that the features in this dataset capture most of the factors that influence the pricing of a home, some linear combination of the features could give a reasonable estimate for the pricing of an individual house below \$1-2 million.  Since the distribution is closer to a power law, two seperate linear functions should give a pretty good estimate by accounting for the 'knee' in the pricing distribution.  First though, we'll try fitting a single line to the data and see what kind of error comes out.
 
 ```{r message = F, warning = F}
+#Scale datasets 
+housing_train_data_scaled <- cbind(housing_train_data[,1], scale(housing_train_data[,2:7]))
+housing_test_data_scaled <- cbind(housing_test_data[,1], scale(housing_test_data[,2:7]))
+
+summary(housing_train_data_scaled)
+summary(housing_test_data_scaled)
+```
+
+```{r message = F, warning = F}
+require(tensorflow)
+
 #split data for training
 #test general linear model on relevant quantitative data
 
-#normalize the features
-suppressWarnings(
-  {
-  housing_train_data_scaled <- housing_train_data %>% mutate_at(funs(scale(.) %>% as.vector),
-                                                                 .cols = 2:length(housing_train_data))
+#Test on a nueral network of 10 nodes
 
-  housing_test_data_scaled <- housing_test_data %>% mutate_at(funs(scale(.) %>% as.vector),
-                                                               .cols = 2:length(housing_test_data))
-  max_test <- apply(housing_test_data_scaled, FUN = max, MARGIN = 2)
-  min_test <- apply(housing_test_data_scaled, FUN = min, MARGIN = 2)
-  mean_test <- apply(housing_test_data_scaled, FUN = mean, MARGIN = 2)
-  }
-)
 
-housing_train_price <- housing_train_data[, "price"]
+X <- tf$placeholder(tf$float32, shape(NULL, 7L))
+Y <- tf$placeholder(tf$float32, shape(NULL, 1L))
+
+
+
+W1 <- tf$Variable(tf$zeros(shape(10, 7)))
+b1 <- tf$Variable(tf$zeros(shape(10, 1)))
+W2 <- tf$Variable(tf$zeros(shape(1, 10)))
+b2 <- tf$Variable(tf$zeros(shape(1, 1)))
+
+A1 <- tf$nn$relu(tf$add(tf$matmul(X,W1), b1))
+A2 <- tf$nn$relu(tf$add(tf$matmul(A1,W2), b2))
+
+cost <- tf
+```
+
+
+```{r message = F, warning = F}
+tf$placeholder(tf$float32, shape(7L, NULL))
+
+housing_train_price <-  housing_train_data[, "price"]
 housing_test_price <- housing_test_data[, "price"]
 
 
@@ -118,7 +135,7 @@ price_est_plotly <- plot_ly() %>%
   layout(title = "Attempting Linear Regression Model
                   </br> for Pricing Homes in King County")
 
-rxLinePlot(Score ~ sqft_living + grade + condition, type = c("p", "r"), data = price_mod)
+#rxLinePlot(Score ~ sqft_living + grade + condition, type = c("p", "r"), data = price_mod)
 price_est_plotly
 #summary(glm_mod)
 ```
@@ -134,16 +151,16 @@ min_test_rev1 <- apply(housing_test_data_rev1, FUN = min, MARGIN = 2)
 mean_test_rev1 <- apply(housing_test_data_rev1, FUN = mean, MARGIN = 2)
 
 
-glm_mod_rev1 <- glm(price ~ sqft_living + sqft_lot, data = housing_train_data_rev1)
+glm_mod_rev1 <- rxFastLinear(price ~ sqft_living + grade + condition, data = housing_train_data_rev1, type = "regression", verbose = 0)
 
 
-price_mod_rev1 <- as.numeric(predict(glm_mod_rev1, newdata = housing_test_data_rev1))
-xvals_rev1 <- 1:length(price_mod_rev1)
+price_mod_rev1 <- rxPredict(glm_mod_rev1, data = housing_test_data_rev1, verbose = 0, extraVarsToWrite = c("sqft_living", "grade","condition"))
+xvals_rev1 <- 1:length(price_mod_rev1$Score)
 
 price_est_plotly_rev1 <- plot_ly() %>% 
   add_markers(name = "Test Set Price", x = xvals_rev1, y = housing_test_price_rev1$price) %>%
-  add_markers(name = "Linear Model est", x = xvals_rev1, y = price_mod_rev1) %>%
-  add_lines(name = "Magnitude Difference", x = xvals_rev1, y = price_mod_rev1 - housing_test_price_rev1$price) %>%
+  add_markers(name = "Linear Model est", x = xvals_rev1, y = price_mod_rev1$Score) %>%
+  add_lines(name = "Magnitude Difference", x = xvals_rev1, y = price_mod_rev1$Score - housing_test_price_rev1$price) %>%
   layout(title = "Attempting Linear Regression Model
                   </br>for Pricing Homes in King County
                   </br>Where Price of Home < $800k")
@@ -151,15 +168,12 @@ price_est_plotly_rev1 <- plot_ly() %>%
 price_est_plotly_rev1
 #summary(glm_mod_rev1)
 ```
-```{r}
-require('e1071')
-svm_mod <- svm(price ~ ., data = housing_train_data, gamma = 0.1)
-svm_pred <- predict(svm_mod, data = housing_test_data)
+By Cutting off the less linear part of the dataset, the maxerror between the estimate and the actual price was decreased.
+```{r message = F, warning = F}
 
-plot(housing_test_data$price, )
+
 
 ```
-
 
 
 
