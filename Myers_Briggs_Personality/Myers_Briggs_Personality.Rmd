@@ -1,0 +1,80 @@
+
+---
+title: "How Frequent Is My Myers-Briggs Type?"
+author: "Duncan McKinnon"
+output: html_notebook
+---
+
+This notebook uses a dataset on the frequency of each Myers-Briggs personality type to look at how each of the traits that come together to identify a set of personality types are distributed in the population.
+
+```{r list tables}
+library(data.world)
+library(stringr)
+
+dataset_key <- "https://data.world/makeovermonday/how-frequent-is-my-myers-briggs-type"
+mb_qry <- data.world::qry_sql("SELECT * FROM myersbriggstypes")
+mb_df <- data.world::query(mb_qry, dataset = dataset_key)
+
+mb_df$t_hinking_f_eeling <- ifelse(mb_df$t_hinking_f_eeling == "true", "T", "F")
+
+types <- c()
+for(i in 1:16)
+{
+  types <- c(types, str_c(mb_df[i,1], mb_df[i,2], mb_df[i,3], mb_df[i,4]))
+}
+
+mb_df$meyers_briggs <- types
+
+mb_df
+```
+
+This pie chart gives a proportioned representation of the number of people who fit into each of the 16 types after taking the meyers briggs test.
+```{r pie_chart_overall}
+library(plotly)
+
+pie_overall <- plot_ly(mb_df) %>% add_pie(values = ~ratio_in_population, labels = ~meyers_briggs) %>% 
+                               layout(title = "Meyers-Briggs Personality Type Breakdown")
+
+
+
+pie_overall
+
+```
+
+```{r pie_charts_by_trait}
+library(sqldf)
+
+# Function to generate a data frame of this trait's ratio and labels
+trait_ratio <- function(col, type, labels)
+{
+  val_A <- unlist(sqldf(str_c("SELECT SUM(ratio_in_population) FROM mb_df
+                           WHERE ", col , " == \'", type, "\'")))
+  val_B <- 1 - val_A
+  
+  return(data.frame('labels' = labels, 'values' = c(val_A[1], val_B[1])) )
+}
+
+# List of trait data frames
+mb_traits <- list()
+
+mb_traits[["E/I"]] <- trait_ratio("e_xtroversion_i_ntroversion", "E", c("Extroversion", "Introversion"))
+mb_traits[["S/I"]] <- trait_ratio("s_ensing_i_n_tuition", "S", c("Sensing", "Intuition"))
+mb_traits[["T/F"]] <- trait_ratio("t_hinking_f_eeling", "T", c("Thinking", "Feeling"))
+mb_traits[["J/P"]] <- trait_ratio("j_udging_p_erceiving", "J", c("Judging", "Perceiving"))
+
+
+# List of trait pie-charts
+plot_list <- plot_ly() %>% add_pie(data = mb_traits[["E/I"]], values = ~values, labels = ~labels, name = "Extroversion / Introversion",
+                                   domain = list(x = c(0, 0.4), y = c(0.6, 1))) %>%
+                           add_pie(data = mb_traits[["S/I"]], values = ~values, labels = ~labels, name = "Sensing / Intuition",
+                                   domain = list(x = c(0.6, 1), y = c(0.6, 1))) %>%
+                           add_pie(data = mb_traits[["T/F"]], values = ~values, labels = ~labels, name = "Thinking / Feeling",
+                                   domain = list(x = c(0, 0.4), y = c(0, 0.4))) %>%
+                           add_pie(data = mb_traits[["J/P"]], values = ~values, labels = ~labels, name = "Judging / Perceiving",
+                                   domain = list(x = c(0.6, 1), y = c(0, 0.4))) %>%
+                           layout(title = "Meyers Briggs By Trait Ratio", showlegend = T,
+                                  xaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE),
+                                  yaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE))
+
+plot_list
+``` 
