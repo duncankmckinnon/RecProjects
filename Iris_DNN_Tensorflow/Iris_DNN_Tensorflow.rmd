@@ -1,0 +1,99 @@
+---
+title: "Iris DNN with Keras and Tensorflow"
+author: "Duncan McKinnon"
+output: html_notebook
+---
+
+
+Load in package dependencies
+```{r message = F, warning = F, echo = F, strip.white = F, tidy = T}
+
+suppressPackageStartupMessages(
+  {
+    #install or load required packages into the workspace
+    package_list <- c('tidyverse', 'knitr', 'plotly','RColorBrewer','sqldf', 'stringr','keras')
+    non_installed <- package_list[!(package_list %in% installed.packages()[,"Package"])]
+    if(length(non_installed)) install.packages(non_installed)
+    require('dplyr')
+    require('plotly')
+    require('RColorBrewer')
+    require('sqldf')
+    require('knitr')
+    require('stringr')
+    
+    #Keras runs on top of TensorFlow
+    require('keras')
+  }
+)
+knitr::opts_chunk$set(message = F, warning = F, strip.white = F, tidy = T)
+```
+
+Read in Iris dataset and reformat for training with Keras
+```{r}
+
+dataset <- as.data.frame(iris)
+x_train <- dataset[1:100, 1:4 ]
+y_train <- to_categorical(as.numeric(dataset[1:100,5]), num_classes = 3)
+#x_test <- t(dataset[101:150, 1:4 ])
+#y_test <- to_categorical(dataset[101:150, 5], num_classes = 3)
+
+model1 <- keras_model_sequential()
+
+model1 %>%
+  layer_activation("relu", input_shape = c(4)) %>%
+  layer_activity_regularization(l2= "0.3") %>%
+  layer_activation("relu") %>%
+  layer_activation("softmax")
+
+opt<-optimizer_adam( lr= 0.0001 , decay = 1e-6 )
+
+
+model1 %>%
+ compile(loss="categorical_crossentropy",
+ optimizer=opt,metrics = "accuracy")
+
+#Summary of the Model and its Architecture
+summary(model1)
+
+model1 %>% fit(x_train, y_train, epochs = 100, shuffle=TRUE)
+```
+
+Train a multi-class classification model with TensorFlow
+```{r}
+tf$set_random_seed(1)
+
+#datasets x_ and y_ still need to be formatted before this can run
+
+X <- tf$placeholder(shape(4L, NULL))
+Y <- tf$placeholder(shape(3L, NULL))
+W <- tf$Variable(tf$zeros(shape(3L, 4L)))
+b <- tf$Variable(tf$zeros(shape(3L, 1L)))
+
+y_hat <- tf$nn$softmax(tf$add(tf$matmul(W, X), b))
+
+#cost <- tf$reduce_mean(-tf$add(tf$reduce_sum(tf$matmul(Y, log(y_hat))), tf$reduce_sum(tf$matmul((1 - Y), log(1 - y_hat)))))
+cost <- tf$reduce_mean(-tf$reduce_sum(tf$add(tf$matmul(Y, log(y_hat)), tf$matmul((1-Y), log(1 - y_hat))), reduction_indices=1L))
+train <- tf$train$AdamOptimizer(0.1)
+optimize <- train$minimize(cost)
+
+sess = tf$Session()
+sess$run(tf$global_variables_initializer())
+
+costs <- c()
+
+for (i in 1:100) {
+  sess$run(optimize, feed_dict = dict(X = x_))
+  
+  if(i %% 10 == 0)
+  {
+    costs <- c(costs, sess$run(cost, feed_dict = dict(X = x_, Y = y_)))
+    print(costs)
+  }
+}
+
+sess$run(W)
+sess$run(b)
+
+```
+
+
