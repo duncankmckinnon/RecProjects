@@ -1,7 +1,7 @@
 
 ---
 title: "How Frequent Is My Myers-Briggs Type?"
-author: "Duncan McKinnon"
+author: "Duncan McKinnon (INFJ/INTJ)"
 output: html_notebook
 ---
 
@@ -11,12 +11,15 @@ This notebook uses a dataset on the frequency of each Myers-Briggs personality t
 library(data.world)
 library(stringr)
 
+knitr::opts_chunk$set(message = F, warning = F, strip.white = F, tidy = T)
+
 dataset_key <- "https://data.world/makeovermonday/how-frequent-is-my-myers-briggs-type"
 mb_qry <- data.world::qry_sql("SELECT * FROM myersbriggstypes")
 mb_df <- data.world::query(mb_qry, dataset = dataset_key)
 
 mb_df$t_hinking_f_eeling <- ifelse(mb_df$t_hinking_f_eeling == "true", "T", "F")
 
+# Add full type names
 types <- c()
 for(i in 1:16)
 {
@@ -24,6 +27,8 @@ for(i in 1:16)
 }
 
 mb_df$meyers_briggs <- types
+
+mb_df <- data.frame(mb_df[,1], mb_df[,2], mb_df[,3], mb_df[,4], mb_df[,6], mb_df[,5])
 
 mb_df
 ```
@@ -33,14 +38,14 @@ This pie chart gives a proportioned representation of the number of people who f
 library(plotly)
 
 pie_overall <- plot_ly(mb_df) %>% add_pie(values = ~ratio_in_population, labels = ~meyers_briggs) %>% 
-                               layout(title = "Meyers-Briggs Personality Type Breakdown")
+                               layout(title = "Myers-Briggs Personality Type Breakdown", showlegend = F)
 
 
 
 pie_overall
 
 ```
-
+We can break this down further into each of the individual traits that make up the myers briggs type to look at how individual's scores are distributed here.  The pie charts below show how each trait (EI/SN/TF/IJ) is is divided within the population.
 ```{r pie_charts_by_trait}
 library(sqldf)
 
@@ -58,7 +63,7 @@ trait_ratio <- function(col, type, labels)
 mb_traits <- list()
 
 mb_traits[["E/I"]] <- trait_ratio("e_xtroversion_i_ntroversion", "E", c("Extroversion", "Introversion"))
-mb_traits[["S/I"]] <- trait_ratio("s_ensing_i_n_tuition", "S", c("Sensing", "Intuition"))
+mb_traits[["S/N"]] <- trait_ratio("s_ensing_i_n_tuition", "S", c("Sensing", "Intuition"))
 mb_traits[["T/F"]] <- trait_ratio("t_hinking_f_eeling", "T", c("Thinking", "Feeling"))
 mb_traits[["J/P"]] <- trait_ratio("j_udging_p_erceiving", "J", c("Judging", "Perceiving"))
 
@@ -66,15 +71,81 @@ mb_traits[["J/P"]] <- trait_ratio("j_udging_p_erceiving", "J", c("Judging", "Per
 # List of trait pie-charts
 plot_list <- plot_ly() %>% add_pie(data = mb_traits[["E/I"]], values = ~values, labels = ~labels, name = "Extroversion / Introversion",
                                    domain = list(x = c(0, 0.4), y = c(0.6, 1))) %>%
-                           add_pie(data = mb_traits[["S/I"]], values = ~values, labels = ~labels, name = "Sensing / Intuition",
+                           add_pie(data = mb_traits[["S/N"]], values = ~values, labels = ~labels, name = "Sensing / Intuition",
                                    domain = list(x = c(0.6, 1), y = c(0.6, 1))) %>%
                            add_pie(data = mb_traits[["T/F"]], values = ~values, labels = ~labels, name = "Thinking / Feeling",
                                    domain = list(x = c(0, 0.4), y = c(0, 0.4))) %>%
                            add_pie(data = mb_traits[["J/P"]], values = ~values, labels = ~labels, name = "Judging / Perceiving",
                                    domain = list(x = c(0.6, 1), y = c(0, 0.4))) %>%
-                           layout(title = "Meyers Briggs By Trait Ratio", showlegend = T,
+                           layout(title = "Myers Briggs By Trait", showlegend = T,
                                   xaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE),
                                   yaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE))
 
 plot_list
 ``` 
+We can go even deeper into how the traits are distributed by looking at individual combinations of traits.  These are represented by all 2 placed letter combinations (traits) within a myers briggs type, with 4 possible combinations for each pair of traits.  The charts below show how each pair of traits is divided within the population.    
+```{r pie_charts_combined_traits}
+
+mb_trait_comb <- list()
+
+# Function to generate a data frame of this trait's ratio and labels
+trait_ratio_comb <- function(col, type, labels)
+{
+  
+  str_parts <- c()
+  str_parts <- c(str_parts, str_c(col[1] , " == \'", type[1], "\' AND ", col[2], " == \'", type[3], "\'"))
+  str_parts <- c(str_parts, str_c(col[1] , " == \'", type[1], "\' AND ", col[2], " == \'", type[4], "\'"))
+  str_parts <- c(str_parts, str_c(col[1] , " == \'", type[2], "\' AND ", col[2], " == \'", type[3], "\'"))
+  str_parts <- c(str_parts, str_c(col[1] , " == \'", type[2], "\' AND ", col[2], " == \'", type[4], "\'"))
+  
+  str_tot <- "SELECT SUM(ratio_in_population) FROM mb_df WHERE "
+  values = c()
+  
+  for(i in 1:4)
+  {
+    qry <- str_c(str_tot, str_parts[i], collapse = "") 
+    
+    values <- c(values, unlist(sqldf(qry)))
+  }
+  
+  return(data.frame('labels' = labels, 'values' = values ))
+}
+
+mb_trait_comb[["EI/TF"]] <- trait_ratio_comb(c("e_xtroversion_i_ntroversion", "t_hinking_f_eeling"), c("E","I","T","F"),
+                                             c("Extroversion/Thinking", "Extroversion/Feeling", "Introversion/Thinking", "Introversion/Feeling"))
+
+mb_trait_comb[["SN/JP"]] <- trait_ratio_comb(c("s_ensing_i_n_tuition", "j_udging_p_erceiving"), c("S", "N", "J", "P"),
+                                             c("Sensing/Judging", "Sensing/Perceiving", "Intuition/Judging", "Intuition/Perceiving"))
+
+mb_trait_comb[["EI/SN"]] <- trait_ratio_comb(c("e_xtroversion_i_ntroversion", "s_ensing_i_n_tuition"), c("E","I","S","N"),
+                                             c("Extroversion/Sensing", "Extroversion/Intuition", "Introversion/Sensing", "Introversion/Intuition"))
+
+mb_trait_comb[["TF/JP"]] <- trait_ratio_comb(c("t_hinking_f_eeling", "j_udging_p_erceiving"), c("T", "F", "J", "P"),
+                                             c("Thinking/Judging", "Thinking/Perceiving", "Feeling/Judging", "Feeling/Perceiving"))
+
+mb_trait_comb[["JP/EI"]] <- trait_ratio_comb(c("j_udging_p_erceiving", "e_xtroversion_i_ntroversion"), c("J", "P", "E", "I"),
+                                             c("Judging/Extroversion", "Judging/Introversion", "Perceiving/Extroversion", "Perceiving/Introversion"))
+
+mb_trait_comb[["SN/TF"]] <- trait_ratio_comb(c("s_ensing_i_n_tuition", "t_hinking_f_eeling"), c("S", "N", "T", "F"),
+                                             c("Sensing/Thinking", "Sensing/Feeling", "Intuition/Thinking", "Intuition/Feeling"))
+
+plot_trait_comb <- plot_ly() %>% add_pie(data = mb_trait_comb[["EI/TF"]], values = ~values, labels = ~labels, name = "EI/TF",
+                                    domain = list(x = c(0.1, 0.5), y = c(0.7, 1))) %>%
+                                add_pie(data = mb_trait_comb[["SN/JP"]], values = ~values, labels = ~labels, name = "SN/JP",
+                                    domain = list(x = c(0.5, 0.9), y = c(0.7, 1))) %>%
+                                add_pie(data = mb_trait_comb[["EI/SN"]], values = ~values, labels = ~labels, name = "EI/SN",
+                                    domain = list(x = c(0, 0.4), y = c(0.35, 0.65))) %>%
+                                add_pie(data = mb_trait_comb[["TF/JP"]], values = ~values, labels = ~labels, name = "TF/JP",
+                                    domain = list(x = c(0.6, 1), y = c(0.35, 0.65))) %>%
+                                add_pie(data = mb_trait_comb[["JP/EI"]], values = ~values, labels = ~labels, name = "JP/EI",
+                                    domain = list(x = c(0.1, 0.5), y = c(0, 0.3))) %>%
+                                add_pie(data = mb_trait_comb[["SN/TF"]], values = ~values, labels = ~labels, name = "SN/TF",
+                                    domain = list(x = c(0.5, 0.9), y = c(0, 0.3))) %>%
+                                layout(title = "Combined Traits Distributions", showlegend = F,
+                                    xaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE),
+                                    yaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE))
+
+plot_trait_comb
+
+```
+
