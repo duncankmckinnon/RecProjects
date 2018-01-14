@@ -10,16 +10,53 @@ suppressPackageStartupMessages(
     require('dplyr')
     require('plotly')
     require('readr')
+    require('sqldf')
+    source('update_datasets.R')
   }
 )
 Ranking_Data <- update_datasets(F)
-recent_grads <- as.tbl(Ranking_Data[['recent-grads.csv']])
+recent_grads <- Ranking_Data[['recent_grads']]
 
-recent_grads_stats <- list("MEANS" = sapply(recent_grads[,], FUN = function(x){ifelse(is.numeric(x), mean(x), 0)}), 
-                           "STDEVS" = sapply(recent_grads, FUN = function(x){ifelse(is.numeric(x), sd(x), 0)}))
+recent_grads <- recent_grads %>% arrange(rank)
+recent_grads
+```
 
-recent_grads %>% arrange(desc(Rank)) %>% vars(Rank, Major, Major_category, Men, Women, )
+```{r}
+recent_grads_range <- sqldf("SELECT Major_category AS Discipline, AVG(Rank) As Rank, AVG(P25th) AS P25, AVG(Median) AS P50, AVG(P75th) AS P75 
+                             FROM recent_grads 
+                             GROUP BY Major_category
+                             ORDER BY Rank")
+
+
+m <- 1:dim(recent_grads_range)[1]
+recent_grads_range["Rank"] <- m
+
+recent_grads_range
 
 
 ```
 
+```{r}
+tables_list <- list()
+
+for( i in 1:dim(recent_grads_range)[1])
+{
+  x <- recent_grads_range$Discipline[i]
+  table_data <- sqldf(sprintf("SELECT * FROM recent_grads 
+                                   WHERE major_category = '%s'
+                                   ORDER BY rank", x))
+  tables_list[[x]] <- table_data
+}
+
+majors_plot <- plot_ly(recent_grads) %>% 
+               #add_trace(x = ~major_category, y = ~p25th, color = ~major_category, hoverinfo = "none", type = "box") %>%
+               add_trace(x = ~major_category, y = ~median, color = ~major_category, hoverinfo = "~rank", type = "box") %>%
+               #add_trace(x = ~major_category, y = ~p75th, color = ~major_category, hoverinfo = "none", type = "box") %>%
+               layout(xaxis = list(title = "Major Discipline", categoryorder = "array", categoryarray = recent_grads_range$Discipline),
+                      yaxis = list(title = "Recorded Compensation ($)"), showlegend = FALSE)
+
+majors_plot
+
+
+
+```

@@ -1,14 +1,19 @@
-update_datasets <- function(x = T)
+update_datasets <- function(x = TRUE)
 {
-  library('RCurl')
-  library('stringr')
-  fnames <- c("all-ages.csv", "majors-list.csv", "recent-grads.csv", "women-stem.csv", "grad-students.csv")
+  require('data.world')
+  require('stringr')
+  dataset_key <- "https://data.world/fivethirtyeight/college-majors"
+  tables_qry <- data.world::qry_sql("SELECT * FROM Tables")
+  tables_df <- data.world::query(tables_qry, dataset = dataset_key)
   file_list <- list()
-  for(i in 1:length(fnames))
+  for(i in 1:length(tables_df$tableName))
   {
-    fname <- str_c('https://raw.githubusercontent.com/duncankmckinnon/RecProjects/master/US_College_Majors_2010-12/', fnames[i])
-    file_list[[fnames[i]]] <- read.csv(url(fname), stringsAsFactors = F, skipNul = T, blank.lines.skip = T)
-    if(x){write.csv(file, fnames[i])}
+    next_q <- data.world::qry_sql(sprintf("SELECT * FROM `%s`", tables_df$tableName[[i]]))
+    file_list[[tables_df$tableName[[i]]]] <- data.world::query(next_q, dataset = dataset_key)
+    if(x){write.csv(file_list[[i]], str_c("US_College_Majors_2010-12/", tables_df$tableName[[i]], ".csv"))}
   }
   return(file_list)
 }
+
+
+

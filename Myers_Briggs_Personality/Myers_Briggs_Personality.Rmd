@@ -23,7 +23,7 @@ mb_df$t_hinking_f_eeling <- ifelse(mb_df$t_hinking_f_eeling == "true", "T", "F")
 types <- c()
 for(i in 1:16)
 {
-  types <- c(types, str_c(mb_df[i,1], mb_df[i,2], mb_df[i,3], mb_df[i,4]))
+  types <- c(types, str_c(mb_df[i,1], mb_d[i,2], mb_df[i,3], mb_df[i,4]))
 }
 
 mb_df$meyers_briggs <- types
